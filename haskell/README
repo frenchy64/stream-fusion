@@ -1,0 +1,3 @@
+# Stream Fusion in GHC
+
+Stream fusion is a form of deforestation introduced by [Coutts et al.](http://citeseer.ist.psu.edu/viewdoc/summary?doi=10.1.1.104.7401).
