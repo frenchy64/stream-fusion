@@ -481,7 +481,7 @@ Wow! The exact reducing function that we want appears.
 
 Now we can follow exactly why
 
-``racket
+```racket
 (reduce ((compose (Tmap sub1)
                   (Tfilter even?))
          conj)
