@@ -260,7 +260,7 @@ This can be expressed with a filtering transducer.
 The trick that `filter` requires is to *skip* processing a member based on a predicate.
 Notice that the filtering transducer achieves this.
 
-``racket
+```racket
 (define Ftrans ((Tfilter even?) conj))
 
 (Ftrans '() 1)
