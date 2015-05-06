@@ -354,7 +354,7 @@ Transducers compose *backwards*.
 To understand this, we first expand the definitions of `(Tmap sub1)`
 and `(Tfilter even?)` independently.
 
-#### Expanding (Tmap sub1)
+#### Expanding `(Tmap sub1)`
 
 This is the expansion of a mapping transducer. It's just a function that takes
 a reducing function and returns a reducing function.
