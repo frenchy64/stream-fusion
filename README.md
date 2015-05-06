@@ -142,7 +142,7 @@ returns another accumulator.
 ```
 
 Notice the type of conj: the first parameter and return types are identical, and it takes some input
-as second parameter.
+as second parameter. It is a reducing function.
 
 ```racket
 (conj '() 1)
