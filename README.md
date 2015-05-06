@@ -132,7 +132,7 @@ They were [first introduced](http://clojure.org/transducers) by Rich Hickey as a
 ## Basics
 
 A *reducing function* is a function passed to `reduce`, that takes an accumulator and a value, then
-returns the same type as the accumulator.
+returns another accumulator.
 
 `conj` is a reducing function (argument order like `snoc` for Schemers).
 
