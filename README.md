@@ -163,7 +163,7 @@ We can use this over `reduce`:
 
 ### Mapping transducer
 
-Say we want to `map` `add` over this data before reducing, like:
+Say we want to `map` `add1` over this data before reducing, like:
 
 ```racket
 (reduce (lambda (a v)
@@ -206,6 +206,36 @@ A transducer is a function that takes a reducing function and returns a reducing
 For example, `(Tmap add1)` is a transducer. Applying it to a reducing function
 as `((Tmap add1) conj)` results in another reducing function.
 
+`Tmap` is a transducer generator that generates mapping transducers.
+It takes a function that can perform one "step" of the mapping (here `add1`)
+and returns a transducer.
+
+There isn't any trickery here: this reducing function is simply used in every step of the
+reduce. Here is each step of the `reduce` explicitly.
+
+```racket
+(define trans ((Tmap add1) conj))
+
+(trans '() 1)
+;=> '(2)
+
+(trans '(2) 2)
+;=> '(2 3)
+
+(trans '(2 3) 3)
+;=> '(2 3 4)
+
+(trans '(2 3 4) 4)
+;=> '(2 3 4 5)
+```
+
+Notice the how if we defined `trans` as follows, we would get the same answers.
+
+```racket
+(define trans (lambda (a v)
+                (conj a (add1 v))))
+```
+
 ### Filtering transducer
 
 Let's implement a `filter` over `even?` as a `reduce`.
@@ -227,10 +257,299 @@ This can be expressed with a filtering transducer.
 ;=> '(2 4)
 ```
 
+The trick that `filter` requires is to *skip* processing a member based on a predicate.
+Notice that the filtering transducer achieves this.
+
+``racket
+(define Ftrans ((Tfilter even?) conj))
+
+(Ftrans '() 1)
+;=> '()
+
+(Ftrans '() 2)
+;=> '(2)
+
+(Ftrans '(2) 3)
+;=> '(2)
+
+(Ftrans '(2) 4)
+;=> '(2 4)
+```
+
 ### Composing transducers
 
-Let's express a pipeline of transducers 
+Consider this reduction whose input has already been walked twice.
 
 ```racket
+(reduce (lambda (a v)
+          (conj a v))
+        '() (filter even? (map sub1 '(1 2 3 4))))
+;=> '(0 2)
+```
+
+We can manually push both the `map` and `filter` inside
+the reducing function, saving execution time and intermediate
+lists.
+
+```racket
+(reduce (lambda (a v)
+          (let ([v (sub1 v)])
+            (if (even? v)
+              (conj a v)
+              a)))
+        '() '(1 2 3 4))
+;=> '(0 2)
+```
+
+We can *compose* transducers to build a transducing pipeline.
+
+```racket
+(reduce ((compose (Tmap sub1) (Tfilter even?))
+         conj)
+        '() '(1 2 3 4))
+;=> '(0 2)
+```
+
+This is much nicer with `transduce`.
+
+```racket
+(transduce (compose (Tmap sub1) (Tfilter even?))
+           conj
+           '() '(1 2 3 4))
+;=> '(0 2)
+```
+
+Given `compose` composes right-to-left, this is surprising!
+
+```racket
+(define subfilter
+  (compose (curry filter even?)
+           (curry map sub1)))
+
+(subfilter '(1 2 3 4))
+;=> '(0 2)
+```
+
+Transducers compose *backwards*.
+
+```racket
+(define Tsubfilter
+  ((compose (Tmap sub1)
+            (Tfilter even?))
+   conj))
+
+(Tsubfilter '() 1)
+;=> '(0)
+
+(Tsubfilter '(0) 2)
+;=> '(0)
+
+(Tsubfilter '(0) 3)
+;=> '(0 2)
+
+(Tsubfilter '(0 2) 4)
+;=> '(0 2)
+```
+
+To understand this, we first expand the definitions of `(Tmap sub1)`
+and `(Tfilter even?)` independently.
+
+#### Expanding (Tmap sub1)
+
+This is the expansion of a mapping transducer. It's just a function that takes
+a reducing function and returns a reducing function.
+
+```racket
+(Tmap sub1)
+;--->
+  (lambda ([rf : ((Listof Number) Number -> (Listof Number))])
+    (lambda ([result : (Listof Number)]
+             [input : Number])
+      (rf result (sub1 input))))
+```
+
+If we actually apply the mapping transducer to a reducing function, we get back
+a new reducing function. Notice this does exactly what we want for a single step
+of a `map`: perform the operation (subtraction), then append to the list.
+
+```racket
+((Tmap sub1) conj)
+;--->
+  (lambda ([result : (Listof Number)]
+           [input : Number])
+    (conj result (sub1 input)))
+```
+
+#### Expanding (Tfilter sub1)
+
+The filtering transducer is similar: it takes a reducing function and returns a reducing
+function that might call the passed in function if the predicate passes.
+
+```racket
+(Tfilter even?)
+;--->
+  (lambda ([rf : ((Listof Number) Number -> (Listof Number))])
+    (lambda ([result : (Listof Number)]
+             [input : Number])
+      (if (even? input)
+          (rf result input)
+          result)))
+```
+
+Providing a reducing function as `conj` gives us the stepper function for a `filter` defined
+with `reduce`.
+
+```racket
+((Tfilter even?) conj)
+;--->
+    (lambda ([result : (Listof Number)]
+             [input : Number])
+      (if (even? input)
+          (conj result input)
+          result))
+```
+
+#### Expanding (compose (Tmap sub1) (Tfilter even?))
+
+Here's where it gets interesting.
+Composing transducers works out left-to-right, so we should end up
+with a reducing function that first performs a step of `(Tmap sub1)`
+then a step of `(Tfilter even?)`.
+
+By composing two transducers we get another transducer: again, simply a function
+that takes a reducing function and returns one.
+(The definition of `compose` is inlined).
+
+```racket
+(compose (Tmap sub1) (Tfilter even?))
+;---->
+    (lambda ([rf : ((Listof Number) Number -> (Listof Number))])
+      ((Tmap sub1)
+        ((Tfilter even?)
+         rf)))
+```
+
+Observe what happens when we apply a reducing function.
+
+```racket
+((compose (Tmap sub1) (Tfilter even?))
+ conj)
+;---->
+    ((Tmap sub1)
+      ((Tfilter even?)
+       conj))
+;---->
+;; expand Tfilter
+    ((Tmap sub1)
+     (lambda ([result : (Listof Number)]
+              [input : Number])
+       (if (even? input)
+           (conj result input)
+           result)))
+;---->
+;; expand Tmap
+    ((lambda ([rf : ((Listof Number) Number -> (Listof Number))])
+       (lambda ([result : (Listof Number)]
+                [input : Number])
+         (rf result (sub1 input))))
+     (lambda ([result : (Listof Number)]
+              [input : Number])
+       (if (even? input)
+           (conj result input)
+           result)))
+;---->
+;; beta reduction
+    (lambda ([result : (Listof Number)]
+             [input : Number])
+       ((lambda ([result : (Listof Number)]
+                 [input : Number])
+         (if (even? input)
+           (conj result input)
+           result))
+       result (sub1 input)))
+;---->
+;; convert inner lambda -> let
+    (lambda ([result : (Listof Number)]
+             [input : Number])
+      (let ([input (sub1 input)])
+        (if (even? input)
+          (conj result input)
+          result)))
+```
+
+Wow! The exact reducing function that we want appears.
+
+Now we can follow exactly why
+
+``racket
+(reduce ((compose (Tmap sub1)
+                  (Tfilter even?))
+         conj)
+        '() '(1 2 3 4))
+```
+
+is equivalent to 
+
+```racket
+(reduce (lambda ([result : (Listof Number)]
+                 [input : Number])
+          (let ([input (sub1 input)])
+            (if (even? input)
+              (conj result input)
+              result)))
+        '() '(1 2 3 4))
+```
 
 ### Benchmarks
+
+I performed some microbenchmarks. I consistently observed speedup as I moved nested list operations
+into a reducing function.
+
+This is unsurprising, since `map` and `filter` are eager in Racket, so for large lists we are saving
+considerable time from traversing them multiple times.
+
+I ran each benchmark over 100 iterations, with a 100,000 element list, on a Ubuntu VM with 1gb RAM
+on 2.4GHz Intel Core i5, 2012 MacBook Pro.
+
+#### All transducers
+
+All transformations are performed in one pass.
+
+```racket
+(transduce (compose (Tmap add1) (Tfilter even?)) + 0 big-list)
+;; cpu time: 1300 real time: 1274 gc time: 100
+```
+
+#### Partial transducers
+
+Moving the map outside means one extra pass.
+
+```racket
+(transduce (Tfilter even?) + 0 (map add1 big-list))
+cpu time: 1624 real time: 1573 gc time: 116
+```
+
+This was 300ms slower than if `map` was a transducer.
+
+#### No transducers
+
+Moving the map and filter outside means two extra passes.
+
+```racket
+(reduce + 0 (filter even? (map add1 big-list)))
+cpu time: 2008 real time: 1963 gc time: 92
+```
+
+This was 600ms slower than if `map` and `filter were transducers.
+
+## Takeaways
+
+Metaprogramming comes in all shapes and sizes, depending on the context and
+the goals of a project.
+
+Stream Fusion was designed to leverage existing idioms by statically rewriting
+common list operations to fuse them together without intermediate data structures.
+
+Transducers were first invented for Clojure as a new way of compositing data transformations
+generically. This form of runtime metaprogramming did not leverage existing idioms. Outside
+of downstream operations internally using transducers, there is no automatic speedup for user-code.
