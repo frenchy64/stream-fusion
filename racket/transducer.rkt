@@ -1,6 +1,12 @@
 #lang typed/racket/no-check
 
 (require rackunit)
+(provide conj
+         identity
+         Tmap
+         Tfilter
+         reduce
+         transduce)
 
 (define (conj xs x) (append xs `(,x)))
 
