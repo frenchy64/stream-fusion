@@ -380,7 +380,7 @@ of a `map`: perform the operation (subtraction), then append to the list.
     (conj result (sub1 input)))
 ```
 
-#### Expanding (Tfilter sub1)
+#### Expanding `(Tfilter sub1)`
 
 The filtering transducer is similar: it takes a reducing function and returns a reducing
 function that might call the passed in function if the predicate passes.
@@ -409,7 +409,7 @@ with `reduce`.
           result))
 ```
 
-#### Expanding (compose (Tmap sub1) (Tfilter even?))
+#### Expanding `(compose (Tmap sub1) (Tfilter even?))`
 
 Here's where it gets interesting.
 Composing transducers works out left-to-right, so we should end up
